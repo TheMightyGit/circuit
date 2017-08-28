@@ -26,13 +26,27 @@
 package main
 
 import (
+//    "fmt"
+//    "log"
 	"path"
-	"path/filepath"
+//	"path/filepath"
 	"os"
 	"time"
+//    "strings"
 
 	"github.com/gocircuit/circuit/client"
+//    "gopkg.in/yaml.v2"
 )
+
+var data = `
+procs:
+- /bin/ls
+- /bin/echo "yay"
+`
+
+type T struct {
+    Procs        []string `yaml:",flow"`
+}
 
 // pickServer returns the root anchor of a randomly-chosen circuit server in the cluster.
 func pickServer(c *client.Client) client.Anchor {
@@ -61,34 +75,40 @@ func waitFotPayloadDeath(c *client.Client, payloadAnchor string) (recov interfac
 // 	virus DIALIN_CIRCUIT PAYLOAD_ANCHOR SELF_ANCHOR
 //
 func main() {
-	var payloadAnchor, nucleusAnchor string
+    /*
+    t := T{}
+
+    err := yaml.Unmarshal([]byte(data), &t)
+    if err != nil {
+        log.Fatalf("error: %v", err)
+    }
+    fmt.Printf("--- t:\n%v\n\n", t)
+    fmt.Printf("--- procs:\n%v\n\n", strings.Join(t.Procs, ", "))
+    // return
+    */
+
 	switch len(os.Args) {
 	case 2: // initial command-line invocation
-	case 4: // invocation in role of nucleus
-		payloadAnchor = os.Args[2]
-		nucleusAnchor = os.Args[3]
 	default:
-		println("usage: virus circuit://...")
+		println("usage:", os.Args[0], "circuit://...")
 		os.Exit(1)
 	}
 	println("virus dialing into", os.Args[1])
 	c := client.Dial(os.Args[1], nil)
 
-	// The nucleus role waits for the payload process to die before it proceeds.
-	if nucleusAnchor != "" {
-		waitFotPayloadDeath(c, payloadAnchor)
-		c.Walk(client.Split(nucleusAnchor)).Scrub() // remove anchor pointing to us
-	}
-	spawnNucleus(c, spawnPayload(c))
+    for(true) {
+        payloadAnchor := spawnPayload(c)
+        waitFotPayloadDeath(c, payloadAnchor)
+    }
 }
 
 func spawnPayload(c *client.Client) (payloadAnchor string) {
 	service := client.Cmd{
 		Path: "/usr/bin/say", // say is a standard OSX command which speaks, so it's easy to hear the virus in action.
-		Args: []string{"i am a virus"},
+		Args: []string{"woot"},
 	}
 	a := pickServer(c) // Randomly choose a circuit server to host the virus payload.
-	pservice, err := a.Walk([]string{"virus", "payload"}).MakeProc(service) // Run the payload process
+	pservice, err := a.Walk([]string{"johnny", "payload"}).MakeProc(service) // Run the payload process
 	if err != nil {
 		println("payload not created:", err.Error())
 		os.Exit(1)
@@ -97,30 +117,7 @@ func spawnPayload(c *client.Client) (payloadAnchor string) {
 		println("payload not started:", err.Error())
 		os.Exit(1)
 	}
+    println("payload spawned")
 	pservice.Stdin().Close() // Close the standard input of the payload to indicate no intention to write data.
-	return path.Join("/", a.ServerID(), "virus", "payload")
-}
-
-func spawnNucleus(c *client.Client, payloadAnchor string) {
-	b := pickServer(c)
-	virus, _ := filepath.Abs(os.Args[0]) // We assume that the virus binary is on the same path everywhere
-	nucleusAnchor := path.Join("/", b.ServerID(), "virus", "nucleus")
-	nucleus := client.Cmd{
-		Path: virus,
-		Args: []string{
-			b.Addr(), // dial-in circuit server address
-			payloadAnchor, // payload anchor
-			nucleusAnchor, // anchor of the spawned nucleus itself
-		},
-	}
-	pnucleus, err := b.Walk([]string{"virus", "nucleus"}).MakeProc(nucleus)
-	if err != nil {
-		println("nucleus not created:", err.Error())
-		os.Exit(1)
-	}
-	if err := pnucleus.Peek().Exit; err != nil {
-		println("nucleus not started:", err.Error())
-		os.Exit(1)
-	}
-	pnucleus.Stdin().Close()
+	return path.Join("/", a.ServerID(), "johnny", "payload")
 }
